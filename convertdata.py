@@ -7,9 +7,10 @@ __author__ = ""
 __version__ = ""
 __license__ = "MIT"
 
-import sys
 import base64
 import functools
+import hashlib
+import sys
 
 #------------------------------------------------------------------------------
 # hex
@@ -86,10 +87,15 @@ def desPerm(permValues, chunk):
         #        % (byteIndex, bitIndex, swapToIndex, swapToByteIndex, swapToBitIndex, bitValue, bin(chunk[byteIndex]), bin(newChunk[byteIndex]))))
     return newChunk
 
+def desF(rightChunk, key):
+    return 0x0
+
 def desEncode(b):
     bytecount   = len(b)
     chunkcount  = (bytecount // 64) + 1
     res = []
+    pwdstr = input("enter DES key: ")
+    key = hashlib.md5(bytearray(pwdstr, 'ascii')).digest()
     for chunckit in range(chunkcount):
         fromIdx     = chunckit * 16
         toIdx       = chunckit + 16
