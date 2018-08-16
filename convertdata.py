@@ -46,12 +46,26 @@ def clearBit(int_type, offset):
     mask = ~(1 << offset)
     return(int_type & mask)
 
-def swapBits(int_type, offset1, offset2):
-    b1 = testBit(int_type, offset1)
-    b2 = testBit(int_type, offset2)
-    int_type = setBit(int_type, offset2) if b1 else clearBit(int_type, offset2)
-    int_type = setBit(int_type, offset1) if b2 else clearBit(int_type, offset1)
-    return int_type
+def toggleBit(int_type, offset, val):
+    if val:
+        return setBit(int_type, offset)
+    else:
+        return clearBit(int_type, offset)
+
+def chunkFn(chunk, offset, fn):
+    assert offset <= len(chunk) * 4
+    byteIdx = offset // 4
+    bitIdx  = offset % 4
+    return fn(chunk[byteIdx], bitIdx)
+
+def modifyChunkFn(chunk, offset, fn):
+    assert offset <= len(chunk) * 4
+    byteIdx = offset // 4
+    bitIdx  = offset % 4
+    chunk[byteIdx] = fn(chunk[byteIdx], bitIdx)
+
+testdata = [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7,
+            0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf]
 
 desInitialPermValues    = [58, 50, 42, 34, 26, 18, 10, 2,
                            60, 52, 44, 36, 28, 20, 12, 4,
@@ -70,6 +84,40 @@ desFinalPermValues      = [40, 8, 48, 16, 56, 24, 64, 32,
                            35, 3, 43, 11, 51, 19, 59, 27,
                            34, 2, 42, 10, 50, 18, 58, 26,
                            33, 1, 41, 9, 49, 17, 57, 25]
+
+desKeyPermValues        = [57, 49, 41, 33, 25, 17, 9, 1,
+                           58, 50, 42, 34, 26, 18, 10, 2,
+                           59, 51, 43, 35, 27, 19, 11, 3,
+                           60, 52, 44, 36, 63, 55, 47, 39,
+                           31, 23, 15, 7, 62, 54, 46, 38,
+                           30, 22, 14, 6, 61, 53, 45, 37,
+                           29, 21, 13, 5, 28, 20, 12, 4]
+
+def chunksToStr(chunks):
+    return "%s" % list(map(hex, chunks))
+
+def desKeyPerm(keyChunks):
+    newKey = bytearray(14) # 56 bits resulting key
+    for i in range(len(desKeyPermValues)):
+        offset = desKeyPermValues[i] - 1 # 1-64
+        bitValue = chunkFn(keyChunks, offset, testBit)
+        modifyChunkFn(newKey, i, lambda b, o: toggleBit(b, o, bitValue))
+    return newKey
+
+def desShiftSubKey(k):
+    lastBit = chunkFn(k, 7*4 - 1, testBit)
+    shiftedInt = (int.from_bytes(testdata, 'big') << 1)
+    # print("shifted: %d" % shiftedInt)
+    k = bytearray(shiftedInt.to_bytes(len(k)+1, 'big'))
+    modifyChunkFn(k, 0, lambda b,o: toggleBit(b, o, lastBit))
+    return k
+
+def desKeyShift(keyChunks):
+    assert len(keyChunks) == 14, "expecting 56 bits key..."
+    lkey = keyChunks[0:7]
+    rkey = keyChunks[7:14]
+
+    print ("lkey: %s\nlkey^: %s" % (chunksToStr(lkey), chunksToStr(desShiftSubKey(lkey))))
 
 def desPerm(permValues, chunk):
     assert len(chunk) == 16, "[desPerm] Invalid chunk length, got %d  but expecting 16." % len(chunk)
@@ -96,6 +144,9 @@ def desEncode(b):
     res = []
     pwdstr = input("enter DES key: ")
     key = hashlib.md5(bytearray(pwdstr, 'ascii')).digest()
+    permKey = desKeyPerm(key)
+    print("len: %d, key: %s" % (len(permKey), list(map(hex, permKey))))
+    desKeyShift(permKey)
     for chunckit in range(chunkcount):
         fromIdx     = chunckit * 16
         toIdx       = chunckit + 16
