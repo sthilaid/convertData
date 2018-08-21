@@ -8,6 +8,7 @@ __version__ = ""
 __license__ = "MIT"
 
 import base64
+import math
 import functools
 import hashlib
 import sys
@@ -107,7 +108,8 @@ desExpansionPermValues      = [32, 1, 2, 3, 4, 5, 4, 5,
                                22, 23, 24, 25, 24, 25, 26, 27,
                                28, 29, 28, 29, 30, 31, 32, 1]
 
-desKeyShiftCount = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
+desKeyEncodeShiftCount = [1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
+desKeyDecodeShiftCount = [0, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1]
 
 desSBoxValues = [[[14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7],
                   [0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8],
@@ -172,24 +174,31 @@ def desKeyPerm(keyChunks):
         modifyChunkFn(newKey, i, lambda b, o: toggleBit(b, o, bitValue))
     return newKey
 
-def desShiftSubKey(k):
+def desShiftSubKey(k, dir):
     bitrange = len(k) * 4
     shiftedKey = bytearray(len(k))
-    lastbit = chunkFn(k, bitrange-1, testBit)
-    for i in range(bitrange-1):
-        bitValue = chunkFn(k, i, testBit)
-        modifyChunkFn(shiftedKey, i+1, lambda b,o: toggleBit(b, o, bitValue))
-    modifyChunkFn(shiftedKey, 0, lambda b,o: toggleBit(b, o, lastbit))
+    if dir > 0:
+        lastbit = chunkFn(k, bitrange-1, testBit)
+        for i in range(bitrange-1):
+            bitValue = chunkFn(k, i, testBit)
+            modifyChunkFn(shiftedKey, i+1, lambda b,o: toggleBit(b, o, bitValue))
+        modifyChunkFn(shiftedKey, 0, lambda b,o: toggleBit(b, o, lastbit))
+    else:
+        firstbit = chunkFn(k, 0, testBit)
+        for i in range(bitrange-1):
+            bitValue = chunkFn(k, i+1, testBit)
+            modifyChunkFn(shiftedKey, i, lambda b,o: toggleBit(b, o, bitValue))
+        modifyChunkFn(shiftedKey, bitrange-1, lambda b,o: toggleBit(b, o, firstbit))
     return shiftedKey
 
-def desKeyShift(roundNum, keyChunks):
+def desKeyShift(shift, keyChunks):
     assert len(keyChunks) == 14, "expecting 56 bits key..."
     lkey = keyChunks[0:7]
     rkey = keyChunks[7:14]
-    shiftCount = desKeyShiftCount[roundNum]
-    for i in range(shiftCount):
-        lkey = desShiftSubKey(lkey)
-        rkey = desShiftSubKey(rkey)
+    dir = int(math.copysign(1, shift))
+    for i in range(abs(shift)):
+        lkey = desShiftSubKey(lkey, dir)
+        rkey = desShiftSubKey(rkey, dir)
     lkey.extend(rkey)
     return lkey
 
@@ -247,64 +256,38 @@ def desPBox(data):
 # def desF(rightChunk, key):
 #     return 0x0
 
-def desEncode(b):
-    bytecount   = len(b)
-    chunkcount  = (bytecount // 64) + 1
-    res = bytearray(0)
-    pwdstr = input("enter DES key: ")
-    key = hashlib.md5(bytearray(pwdstr, 'ascii')).digest()
-    permKey = desKeyPerm(key)
-    shiftedPermKey = permKey.copy()
-
-    for chunckit in range(chunkcount):
-        fromIdx     = chunckit * 16
-        toIdx       = chunckit + 16
-        assert (fromIdx < bytecount) and (toIdx <= bytecount), "Invalid index: fromIdx: %d, toIdx: %d, bytecount: %d" %(fromIdx, toIdx, bytecount)
-        chunk       = b[fromIdx:toIdx]
-        print("encrypting chunk %d: %s" % (chunckit, chunk))
-        permChunk   = desPerm(desInitialPermValues, chunk)
-
-        ldata           = chunk[0:8]
-        rdata           = chunk[8:16]
-
-        for round in range(16):
-            shiftedPermKey  = desKeyShift(round, shiftedPermKey)
-            compressedKey   = desKeyCompressionPerm(shiftedPermKey)
-            expandedRdata   = desExpansionPerm(rdata)
-            xorResult       = desXOR(expandedRdata, compressedKey)
-            sboxResult      = desSBox(xorResult)
-            pboxResult      = desPBox(sboxResult)
-            newRdata        = desXOR(ldata, pboxResult)
-            ldata           = rdata
-            rdata           = newRdata
-        
-        encryptedChunk = ldata.copy()
-        encryptedChunk.extend(rdata)
-        finalChunk  = desPerm(desFinalPermValues, encryptedChunk)
-        print("encrypted chunk %d:  %s" % (chunckit, finalChunk))
-        res.extend(finalChunk)
-    return res
-
-def desDecode(s):
-    bytecount   = len(b)
-    chunkcount  = (bytecount // 64) + 1
-    res = bytearray(0)
+def desGetKeys(shiftCountValues, shiftDirection):
     pwdstr = input("enter DES key: ")
     key = hashlib.md5(bytearray(pwdstr, 'ascii')).digest()
     keys = []
     permKey = desKeyPerm(key)
     shiftedPermKey = permKey.copy()
     for round in range(16):
-            shiftedPermKey  = desKeyShift(round, shiftedPermKey)
-            compressedKey   = desKeyCompressionPerm(shiftedPermKey)
-            keys += compressedKey
-        
+        shift = shiftDirection * shiftCountValues[round]
+        shiftedPermKey  = desKeyShift(shift, shiftedPermKey)
+        compressedKey   = desKeyCompressionPerm(shiftedPermKey)
+        keys += [compressedKey]
+    return keys
+
+def desEncode(data):
+    keys = desGetKeys(desKeyEncodeShiftCount, 1)
+    return desProcessData(keys, data)
+
+def desDecode(data):
+    keys = desGetKeys(desKeyDecodeShiftCount, -1)
+    keys.reverse()
+    return desProcessData(keys, data)
+
+def desProcessData(keys, data):
+    bytecount   = len(data)
+    chunkcount  = (bytecount // 64) + 1
+    res = bytearray(0)
 
     for chunckit in range(chunkcount):
         fromIdx     = chunckit * 16
         toIdx       = chunckit + 16
         assert (fromIdx < bytecount) and (toIdx <= bytecount), "Invalid index: fromIdx: %d, toIdx: %d, bytecount: %d" %(fromIdx, toIdx, bytecount)
-        chunk       = b[fromIdx:toIdx]
+        chunk       = data[fromIdx:toIdx]
         print("encrypting chunk %d: %s" % (chunckit, chunk))
         permChunk   = desPerm(desInitialPermValues, chunk)
 
@@ -312,8 +295,7 @@ def desDecode(s):
         rdata           = chunk[8:16]
 
         for round in range(16):
-            shiftedPermKey  = desKeyShift(round, shiftedPermKey)
-            compressedKey   = desKeyCompressionPerm(shiftedPermKey)
+            compressedKey   = keys[round]
             expandedRdata   = desExpansionPerm(rdata)
             xorResult       = desXOR(expandedRdata, compressedKey)
             sboxResult      = desSBox(xorResult)
@@ -327,7 +309,7 @@ def desDecode(s):
         finalChunk  = desPerm(desFinalPermValues, encryptedChunk)
         print("encrypted chunk %d:  %s" % (chunckit, finalChunk))
         res.extend(finalChunk)
-    return res
+    return res    
 
 #------------------------------------------------------------------------------
 # main
