@@ -211,15 +211,15 @@ def desKeyCompressionPerm(key):
 def desExpansionPerm(rdata):
     assert len(rdata) == 4, "half of the chunk should be 32 bits"
     expandedData = bytearray(6) # expansion to 48 bits
-    for bit in range(32):
+    for bit in range(48):
         offset  = desExpansionPermValues[bit] - 1 # 1-32
         bitValue= chunkFn(rdata, offset, testBit)
         modifyChunkFn(expandedData, bit, lambda b,o: toggleBit(b, o, bitValue))
     return expandedData
 
 def desXOR(expandedRdata, compressedKey):
-    assert len(expandedRdata) == len(compressedKey)
     length = len(expandedRdata)
+    assert length == len(compressedKey)
     result = bytearray(length)
     for byte in range(length):
         result[byte] = expandedRdata[byte] ^ compressedKey[byte]
@@ -232,18 +232,22 @@ def desSBox(data):
     # print("sbox data: %s" % data)
     for box in range(8):
         for bit in range(6):
-            baseBit = box * 6
-            bits[bit] = 1 if chunkFn(data, baseBit+bit, testBit) else 0
+            baseBit = (7 - box) * 6
+            bits[bit] = chunkFn(data, baseBit+bit, testBit)
+            bits.reverse()
         # print("bits: %s" % bits)
-        row = bits[0] << 1 | bits[5]
-        col = bits[1] << 3 | bits[2] << 2 | bits[3] << 1 | bits[4]
+        row = bits[0] << 1 | bits[5] << 0
+        col = bits[1] << 3 | bits[2] << 2 | bits[3] << 1 | bits[4] << 0
+
         # print("box: %d, row: %d, col: %d" % (box, row, col))
         resultIndex = box // 2
         if box % 2 == 0:
-            result[resultIndex] = desSBoxValues[box][row][col]
+            result[resultIndex] = desSBoxValues[box][row][col] << 4
         else:
-            result[resultIndex] = result[resultIndex] | desSBoxValues[box][row][col] << 4
+            result[resultIndex] = result[resultIndex] | desSBoxValues[box][row][col]
+    #print("SBox in: %s, out: %s" % (data, result))
     return result
+
 
 def desPBox(data):
     assert len(data) == 4
@@ -310,8 +314,10 @@ def desProcessData(keys, data):
             ldata           = rdata
             rdata           = newRdata
         
-        encryptedChunk = ldata.copy()
-        encryptedChunk.extend(rdata)
+        # encryptedChunk = ldata.copy()
+        # encryptedChunk.extend(rdata)
+        encryptedChunk = rdata.copy()
+        encryptedChunk.extend(ldata)
         finalChunk  = desPerm(desFinalPermValues, encryptedChunk)
         print("encrypted chunk %d:  %s" % (chunckit, finalChunk))
         res.extend(finalChunk)
