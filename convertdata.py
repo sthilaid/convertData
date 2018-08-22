@@ -288,10 +288,10 @@ def desProcessData(keys, data):
     chunkcount  = (bytecount // 64) + 1
     res = bytearray(0)
 
-    i = 0
-    for k in keys:
-        print("key %d: %s" % (i, k))
-        i += 1
+    # i = 0
+    # for k in keys:
+    #     print("key %d: %s" % (i, k))
+    #     i += 1
 
     for chunckit in range(chunkcount):
         fromIdx     = chunckit * 8
@@ -299,28 +299,29 @@ def desProcessData(keys, data):
         assert (fromIdx < bytecount) and (toIdx <= bytecount), "Invalid index: fromIdx: %d, toIdx: %d, bytecount: %d" %(fromIdx, toIdx, bytecount)
         chunk       = data[fromIdx:toIdx]
         print("encrypting chunk %d: %s" % (chunckit, chunk))
-        permChunk   = desPerm(desInitialPermValues, chunk)
+        chunk       = desPerm(desInitialPermValues, chunk)
 
         ldata           = chunk[0:4]
         rdata           = chunk[4:8]
 
         for round in range(16):
             compressedKey   = keys[round]
-            expandedRdata   = desExpansionPerm(rdata)
-            xorResult       = desXOR(expandedRdata, compressedKey)
-            sboxResult      = desSBox(xorResult)
-            pboxResult      = desPBox(sboxResult)
-            newRdata        = desXOR(ldata, pboxResult)
-            ldata           = rdata
+            rdataBackup     = rdata.copy()
+            rdata           = desExpansionPerm(rdata)
+            rdata           = desXOR(rdata, compressedKey)
+            rdata           = desSBox(rdata)
+            rdata           = desPBox(rdata)
+            newRdata        = desXOR(ldata, rdata)
+            ldata           = rdataBackup
             rdata           = newRdata
-        
-        # encryptedChunk = ldata.copy()
-        # encryptedChunk.extend(rdata)
-        encryptedChunk = rdata.copy()
-        encryptedChunk.extend(ldata)
-        finalChunk  = desPerm(desFinalPermValues, encryptedChunk)
-        print("encrypted chunk %d:  %s" % (chunckit, finalChunk))
-        res.extend(finalChunk)
+
+        # don't exchange ldata/rdata in the last round so we reswitch them
+        chunk = rdata.copy()
+        chunk.extend(ldata)
+
+        chunk  = desPerm(desFinalPermValues, chunk)
+        print("encrypted chunk %d:  %s" % (chunckit, chunk))
+        res.extend(chunk)
     return res    
 
 #------------------------------------------------------------------------------
