@@ -54,14 +54,16 @@ def toggleBit(int_type, offset, val):
         return clearBit(int_type, offset)
 
 def chunkFn(chunk, offset, fn):
-    assert offset <= len(chunk) * 4
-    byteIdx = offset // 4
+    byteCount = len(chunk)
+    assert offset <= byteCount * 4
+    byteIdx = byteCount - 1 - (offset // 4)
     bitIdx  = offset % 4
     return fn(chunk[byteIdx], bitIdx)
 
 def modifyChunkFn(chunk, offset, fn):
-    assert offset <= len(chunk) * 4
-    byteIdx = offset // 4
+    byteCount = len(chunk)
+    assert offset <= byteCount * 4
+    byteIdx = byteCount - 1 - (offset // 4)
     bitIdx  = offset % 4
     chunk[byteIdx] = fn(chunk[byteIdx], bitIdx)
 
@@ -152,18 +154,11 @@ def chunksToStr(chunks):
 
 def desPerm(permValues, chunk):
     assert len(chunk) == 16, "[desPerm] Invalid chunk length, got %d  but expecting 16." % len(chunk)
-    newChunk = chunk.copy();
-    for i in range(63):
-        index = i + 1
-        byteIndex = index // 4
-        bitIndex = index % 4
-        swapToIndex = permValues[index] - 1 # 1-64
-        swapToByteIndex = swapToIndex // 4
-        swapToBitIndex = swapToIndex % 4
-        bitValue = testBit(chunk[swapToByteIndex], swapToBitIndex)
-        newChunk[byteIndex] = setBit(newChunk[byteIndex], bitIndex) if bitValue else clearBit(newChunk[byteIndex], bitIndex)
-        # print(("byteIndex: %d, bitIndex: %d, swapToIndex: %d, swapToByteIndex: %d, swapToBitIndex: %d, bitValue: %d, byte: %s -> %s"
-        #        % (byteIndex, bitIndex, swapToIndex, swapToByteIndex, swapToBitIndex, bitValue, bin(chunk[byteIndex]), bin(newChunk[byteIndex]))))
+    newChunk = bytearray(16)
+    for bit in range(64):
+        offset = permValues[bit] - 1
+        bitValue = chunkFn(chunk, offset, testBit)
+        modifyChunkFn(newChunk, bit, lambda b,o: toggleBit(b, o, bitValue))
     return newChunk
 
 def desKeyPerm(keyChunks):
@@ -239,7 +234,7 @@ def desSBox(data):
             bits[bit] = 1 if chunkFn(data, baseBit+bit, testBit) else 0
         # print("bits: %s" % bits)
         row = bits[0] << 1 | bits[5]
-        col = bits[1] << 0 | bits[2] << 1 | bits[3] << 2 | bits[4] << 3
+        col = bits[1] << 3 | bits[2] << 2 | bits[3] << 1 | bits[4]
         # print("box: %d, row: %d, col: %d" % (box, row, col))
         result[box] = desSBoxValues[box][row][col]
     return result
@@ -264,7 +259,7 @@ def desGetKeys(shiftCountValues, shiftDirection):
     shiftedPermKey = permKey.copy()
     for round in range(16):
         shift = shiftDirection * shiftCountValues[round]
-        shiftedPermKey  = desKeyShift(shift, shiftedPermKey)
+        # shiftedPermKey  = desKeyShift(shift, shiftedPermKey)
         compressedKey   = desKeyCompressionPerm(shiftedPermKey)
         keys += [compressedKey]
     return keys
