@@ -274,30 +274,6 @@ def desGetKeys(shiftCountValues, shiftDirection):
         keys += [compressedKey]
     return keys
 
-def desEncode(data):
-    keys = desGetKeys(desKeyEncodeShiftCount, 1)
-    return desProcessData(keys, data)
-
-def desDecode(data):
-    keys = desGetKeys(desKeyDecodeShiftCount, -1)
-    #keys.reverse()
-    return desProcessData(keys, data)
-
-def desEncodeStr(s):
-    outStr = ""
-    for b in desEncode(bytearray(s, 'ascii')):
-        outStr += chr(b)
-    return outStr
-
-def desDecodeStr(s):
-    data = []
-    for c in s:
-        data += [ord(c)]
-    outStr = ""
-    for b in desDecode(bytearray(data)):
-        outStr += chr(b)
-    return outStr
-
 def desProcessData(keys, data):
     bytecount   = len(data)
     chunkcount  = (bytecount // 8) + (1 if (bytecount % 8) != 0 else 0)
@@ -335,6 +311,37 @@ def desProcessData(keys, data):
         print("encrypted chunk %d:  %s" % (chunckit, chunk))
         res.extend(chunk)
     return res    
+
+def desEncode(data):
+    keys = desGetKeys(desKeyEncodeShiftCount, 1)
+    return desProcessData(keys, data)
+
+def desDecode(data):
+    keys = desGetKeys(desKeyDecodeShiftCount, -1)
+    return desProcessData(keys, data)
+
+def desEncodeStr(s):
+    if os.path.isfile(s):
+        f = open(s, 'r')
+        s = f.read()
+        f.close()
+    outStr = ""
+    for b in desEncode(bytearray(s, 'ascii')):
+        outStr += chr(b)
+    return outStr
+
+def desDecodeStr(s):
+    if os.path.isfile(s):
+        f = open(s, 'r')
+        s = f.read()
+        f.close()
+    data = []
+    for c in s:
+        data += [ord(c)]
+    outStr = ""
+    for b in desDecode(bytearray(data)):
+        outStr += chr(b)
+    return outStr
 
 #------------------------------------------------------------------------------
 # main
