@@ -283,21 +283,33 @@ def desDecode(data):
     #keys.reverse()
     return desProcessData(keys, data)
 
+def desEncodeStr(s):
+    outStr = ""
+    for b in desEncode(bytearray(s, 'ascii')):
+        outStr += chr(b)
+    return outStr
+
+def desDecodeStr(s):
+    data = []
+    for c in s:
+        data += [ord(c)]
+    outStr = ""
+    for b in desDecode(bytearray(data)):
+        outStr += chr(b)
+    return outStr
+
 def desProcessData(keys, data):
     bytecount   = len(data)
-    chunkcount  = (bytecount // 64) + 1
+    chunkcount  = (bytecount // 8) + (1 if (bytecount % 8) != 0 else 0)
     res = bytearray(0)
-
-    # i = 0
-    # for k in keys:
-    #     print("key %d: %s" % (i, k))
-    #     i += 1
 
     for chunckit in range(chunkcount):
         fromIdx     = chunckit * 8
-        toIdx       = chunckit + 8
-        assert (fromIdx < bytecount) and (toIdx <= bytecount), "Invalid index: fromIdx: %d, toIdx: %d, bytecount: %d" %(fromIdx, toIdx, bytecount)
+        toIdx       = fromIdx + 8
         chunk       = data[fromIdx:toIdx]
+        if len(chunk) < 8:
+            chunk.extend(bytearray(8 - len(chunk)))
+        print("from: %d, to: %d, len: %d" % (fromIdx, toIdx, len(data)))
         print("encrypting chunk %d: %s" % (chunckit, chunk))
         chunk       = desPerm(desInitialPermValues, chunk)
 
@@ -340,8 +352,10 @@ options = {"encode64" : lambda s: str(base64.b64encode(bytearray(s, 'ascii')), '
            "decode64" : lambda s: str(base64.b64decode(bytearray(s, 'ascii')), 'ascii'),
            "encodeX" : hexEncode,
            "decodeX" : hexDecode,
-           "encodeDES" : desEncode,
-           "decodeDES" : desDecode,
+           "encodeDES" : lambda s: desEncode(bytearray(s, 'ascii')),
+           # "decodeDES" : lambda s: desDecode(bytearray(s, 'ascii')),
+           # "encodeDES" : lambda s: desEncodeStr
+           "decodeDES" : lambda s: desDecode(bytearray(s, 'ascii')),
 }
      
 def main():
